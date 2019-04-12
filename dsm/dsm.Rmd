@@ -1,0 +1,95 @@
+---
+title: "dsm"
+author: "Jez Bird"
+date: "28 March 2019"
+output: html_document
+---
+
+# Density Surface Modelling
+
+Pages 1002-1003 of Miller et al. 2013 give an excellent summary of approaches to spatial modelling of distance sampling data. They advocate density surface modelling as a preferred option but it would be good to discuss this (and to potentially adopt alternative approaches for modelling Blue Petrel and Grey Petrel data).
+
+I've had a preliminary but fairly weak effort at running some basic density surface models on our data. I don't really understand the outputs at this point and am stuck at the point of needing to run predictions from the model. 
+
+The transects have been split into roughly 20 m square segments. I've calculate mean elevation and mean slope for each segment. We now have segment-level data, distance-data and linked distance-observations to segments.
+
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Jez/Documents/PhD/Data/Island-wide survey/R/dsm"))
+library(dsm)
+library(Distance)
+## Loading required package: mgcv
+## Loading required package: nlme
+## This is mgcv 1.8-7. For overview type 'help("mgcv-package")'.
+## Loading required package: mrds
+## This is mrds 2.1.15
+## Built: R 3.2.2; ; 2015-11-24 17:46:38 UTC; unix
+## This is dsm 2.2.11
+## Built: R 3.2.2; ; 2015-11-24 18:04:45 UTC; unix
+library(ggplot2)
+library(knitr)
+library(captioner)
+library(rgdal)
+library(plyr)
+library(maptools)
+library(tweedie)
+
+# plotting options
+gg.opts <- theme(panel.grid.major=element_blank(),
+                 panel.grid.minor=element_blank(),
+                 panel.background=element_blank())
+
+# make the results reproducible
+set.seed(11123)
+
+segdata <- read.csv("segdata.csv")
+
+distdata <- read.csv("distdata.csv")
+
+obsdata <- read.csv("obsdata.csv")
+
+```
+
+We generate a detection function, but this should eventually come out of the previous analysis including covariates.
+
+```{r}
+
+detfc.hr.null<-ds(distdata, max(distdata$distance), key="hr", adjustment=NULL)
+```
+
+Then fit a simple dsm
+
+```{r}
+
+dsm.xy <- dsm(count~s(x,y), detfc.hr.null, segdata, obsdata, method="REML")
+
+summary(dsm.xy)
+
+vis.gam(dsm.xy, plot.type="contour", view=c("x","y"), asp=1, type="response", contour.col="black", n.grid=100)
+```
+
+Then more complex models with elevation 
+
+```{r}
+
+dsm.xy.elevation <- dsm(count~s(x,y,k=10) + s(elevation_mean,k=20), detfc.hr.null, segdata, obsdata, group = TRUE, segment.area = "area", method="REML")
+summary(dsm.xy.elevation)
+
+plot(dsm.xy.elevation, select=2)
+
+```
+
+and elevation and slope
+
+```{r}
+
+dsm.xy.ele.slope <- dsm(count~s(x,y,k=10) + s(elevation_mean,k=20) +s(slope_mean, k=20), detfc.hr.null, segdata, obsdata, group = TRUE, segment.area = "area", method="REML")
+summary(dsm.xy.ele.slope)
+
+plot(dsm.xy.ele.slope, select=c(2,3))
+
+gam.check(dsm.xy)
+gam.check(dsm.xy.ele.slope)
+```
+
+The next stage will be to make predictions from this data.
+

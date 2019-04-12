@@ -1,0 +1,385 @@
+---
+title: "Distance sampling"
+author: "Jez Bird"
+date: "26 March 2019"
+output:
+  html_document: default
+  word_document: default
+---
+
+## Cleaning raw detection data
+
+Set working directory
+
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Jez/Documents/PhD/Analysis/Data/Island-wide"))
+```
+
+Read in raw transect data - this contains all detections along transects. Transects have not been split into sections yet.
+
+```{r}
+raw_transect_data <- read.csv("Raw_transect_data.csv")
+
+summary(raw_transect_data)
+colnames(raw_transect_data)
+```
+
+Tidy the data
+
+```{r}
+library(dplyr)
+
+## Rename columns
+raw_transect_data = rename(raw_transect_data, veg_height = `Veg.height`)
+raw_transect_data = rename(raw_transect_data, puff_age = `Puff.age`)
+
+## Delete columns
+raw_transect_data$Feather.sample <- NULL
+raw_transect_data$Poo.sample <- NULL
+
+saveRDS(raw_transect_data, "Transect_data_renamed.Rds")
+
+transect_data_renamed = readRDS("Transect_data_renamed.Rds")
+
+sapply(transect_data_renamed, class)
+
+transect_data_renamed[["puff_age"]] = as.factor(transect_data_renamed[["puff_age"]])
+
+# reset missing veg_height values as NA
+missing_veg_height <- transect_data_renamed[["veg_height"]] == 0
+
+transect_data_renamed[["veg_height"]][missing_veg_height] <- NA
+
+summary(transect_data_renamed)
+
+library(ggplot2)
+library(gridExtra)
+
+## Split the data by species and sign (burrow or puff)
+
+library(data.table)
+
+setDT(transect_data_renamed)
+
+prion_brws <- transect_data_renamed[Species == "AP" & Mark == "B",]
+prion_puffs <- transect_data_renamed[Species == "AP" & Mark == "P",]
+WHP_brws <- transect_data_renamed[Species == "WHP" & Mark == "B",]
+
+saveRDS(prion_brws, "prion_brws.Rds")
+prion_brws = readRDS("prion_brws.Rds")
+
+saveRDS(prion_puffs, "prion_puffs.Rds")
+prion_puffs = readRDS("prion_puffs.Rds")
+
+saveRDS(WHP_brws, "WHP_brws.Rds")
+WHP_brws = readRDS("WHP_brws.Rds")
+```
+
+Explore the influence of observer, slope, veg height on distance data
+
+```{r}
+All_sp_plot <- ggplot() + 
+  geom_density(data=prion_brws, aes(x=Distance), color='green') +
+  geom_density(data = prion_puffs, aes(x=Distance), color='red') +
+  geom_density(data = WHP_brws, aes(x=Distance), color='blue')
+All_sp_plot
+```
+
+Prion puffs were detected at greater distances than burrows, and White-headed Petrel burrows were detected at greater distances than Antarctic Prion burrows
+
+```{r}
+AP_brw_slope_plot <- ggplot(data = prion_brws, aes(x=Distance, color=Slope)) + geom_density() + xlim(0,10)
+
+AP_brw_observer_plot <- ggplot(data = prion_brws, aes(x=Distance, color=Observer)) + geom_density() + xlim(0,10)
+
+AP_brw_veg_height_density_plot <- ggplot(data = prion_brws, aes(x=Distance, color=veg_height)) + geom_density() + xlim(0,10)
+
+AP_brw_veg_height_box_plot <- ggplot(data = prion_brws, aes(x=veg_height, y=Distance)) + geom_boxplot(alpha=0.1) +geom_jitter(alpha = 0.1, color = "blue") + ylim(0,10)
+
+grid.arrange(AP_brw_slope_plot, AP_brw_observer_plot, AP_brw_veg_height_density_plot, AP_brw_veg_height_box_plot, nrow = 2)
+
+AP_puff_slope_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=Slope)) + geom_density() + xlim(0,40)
+
+AP_puff_observer_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=Observer)) + geom_density() + xlim(0,40)
+
+AP_puff_veg_height_density_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=veg_height)) + geom_density() + xlim(0,40)
+
+AP_puff_veg_height_box_plot <- ggplot(data = prion_puffs, aes(x=veg_height, y=Distance)) + geom_boxplot(alpha=0.1) +geom_jitter(alpha = 0.1, color = "blue") + ylim(0,40)
+
+grid.arrange(AP_puff_slope_plot, AP_puff_observer_plot, AP_puff_veg_height_density_plot, AP_puff_veg_height_box_plot, nrow = 2)
+
+WHP_brw_slope_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=Slope)) + geom_density() + xlim(0,25)
+
+WHP_brw_observer_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=Observer)) + geom_density() + xlim(0,25)
+
+WHP_brw_veg_height_density_plot <- ggplot(data = prion_puffs, aes(x=Distance, color=veg_height)) + geom_density() + xlim(0,25)
+
+WHP_brw_veg_height_box_plot <- ggplot(data = prion_puffs, aes(x=veg_height, y=Distance)) + geom_boxplot(alpha=0.1) +geom_jitter(alpha = 0.1, color = "blue") + ylim(0,25)
+
+grid.arrange(WHP_brw_slope_plot, WHP_brw_observer_plot, WHP_brw_veg_height_density_plot, WHP_brw_veg_height_box_plot, nrow = 2)
+```
+
+Observer and slope don't appear to have much of an influence on detection distance so will perhaps be of limited importance when modelling detection functions. Veg height does seem to be important although there were too few records of puffs or White-headed Petrel burrows, and perhaps even prion burrows in tall veg to draw conclusions.
+
+## Distance analysis
+
+The value of distance sampling and analysis over plot sampling is allowing for abundance estimation despite imperfect detection. Distance analysis delivers model robustness, meaning that unbiased estimates are still obtained even if not all sources of variability in detection are incorporated. Hence, it is not common to fit an exhaustive candidate model set to data, but there are approaches to capture covariates that may generate models that fit the data better. So, I explore different covariates below.
+
+Distance analysis generally uses one of four main functions to describe the drop off in detection with distance from the transect:
+
+1. Uniform - effectively no drop off in detection. Unrealistic but works with an adjustment term (see below)
+2. Half-normal - half a Gaussian curve. The formula has one parameter that allows for changing scale (the drop-off can be steeper or shallower) but it's not robust to changing shape - it's always a Gaussian curve 
+3. Hazard-rate - has both scale and shape parameters so is more robust
+4. Negative exponential - assumes detection starts dropping off immediately and then tails off with distance. Also unrealistic so not used here.
+
+Cosine, Hermite and Polynomial adjustment terms can be fitted to change the shape of each key function e.g. a uniform function with a cosine adjustment becomes an S-shaped curve. It is not recommended to apply adjustments when covariates are being used in the model (although I don't really understand why not).
+
+## Covariates
+
+Our data include a number of covariates that may influence detection probability:
+
+* Observer (transect level data)
+* Veg height (transect level data)
+* Slope (observation lelevl data - up, down or flat)
+
+In addition we want to assess the influence of stratum - both on detection probability and on density. We're unable to fully stratify our analysis by splitting the data into strata because several strata had too few detections to allow a detection function to be fitted. Therefore, stratum can be used as a covariate to see if it improved model fit.
+
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Jez/Documents/PhD/Data/Island-wide survey/R"))
+library(Distance)
+library(dsm)
+library(mads)
+library(tidyverse)
+library(forcats)
+library(knitr)
+library(kableExtra)
+
+prions <- read.csv("AP_brws_multicov.csv")
+head(prions)
+
+## First, using the pooled data test different models and adjustments to select the best fit (lowest AIC)
+
+##key key function to use; "hn" gives half-normal (default), "hr" gives hazard-rate and
+##"unif" gives uniform. Note that if uniform key is used, covariates cannot be
+##included in the model.
+##adjustment adjustment terms to use; "cos" gives cosine (default), "herm" gives Hermite
+##polynomial and "poly" gives simple polynomial. "cos" is recommended. A
+##value of NULL indicates that no adjustments are to be ???tted.
+
+## Models to test:
+## Half-normal
+## Hazard-rate
+## Half-normal + Cosine
+## Hazard-rate + Cosine
+## Uniform + Cosine
+## Half-normal + Hermite
+## Hazard-rate + Hermite
+## Uniform + Hermite
+## Half-normal + Polynomial
+## Hazard-rate + Polynomial
+## Uniform + Polynomial
+## Half-normal + Stratum
+## Hazard-rate + Stratum
+## Half-normal + Observer
+## Hazard-rate + Observer
+## Half-normal + Veg height
+## Hazard-rate + Veg height
+## Half-normal + Stratum + Observer
+## Hazard-rate + Stratum + Observer
+## Half-normal + Stratum + Veg height
+## Hazard-rate + Stratum + Veg height
+## Half-normal + Observer + Veg height
+## Hazard-rate + Observer + Veg height
+## Half-normal + Stratum + Observer + Veg height
+## Hazard-rate + Stratum + Observer + Veg height
+
+prion.trunc <- "5%"
+prion.half.norm <- ds(prions, truncation=prion.trunc,
+                           key="hn",  adjustment=NULL)
+prion.haz.rate <- ds(prions, truncation=prion.trunc,
+                      key="hr",  adjustment=NULL)
+prion.half.norm.cos <- ds(prions, truncation=prion.trunc,
+                      key="hn",  adjustment="cos")
+prion.haz.rate.cos <- ds(prions, truncation=prion.trunc,
+                     key="hr",  adjustment="cos")
+prion.unif.cos <- ds(prions, truncation=prion.trunc,
+                 key="unif",  adjustment="cos")
+prion.half.norm.herm <- ds(prions, truncation=prion.trunc,
+                      key="hn",  adjustment="herm")
+prion.haz.rate.herm <- ds(prions, truncation=prion.trunc,
+                     key="hr",  adjustment="herm")
+prion.unif.herm <- ds(prions, truncation=prion.trunc,
+                 key="unif",  adjustment="herm")
+prion.half.norm.poly <- ds(prions, truncation=prion.trunc,
+                      key="hn",  adjustment="poly")
+prion.haz.rate.poly <- ds(prions, truncation=prion.trunc,
+                     key="hr",  adjustment="poly")
+prion.unif.poly <- ds(prions, truncation=prion.trunc,
+                 key="unif",  adjustment="poly")
+
+prions$stratum <- ifelse(prions$Region.Label=="1", "1", 
+                         (ifelse(prions$Region.Label=="2", "2", 
+                                 (ifelse(prions$Region.Label=="3", "3", 
+                                         (ifelse(prions$Region.Label=="4", "4",
+                                                 (ifelse(prions$Region.Label=="5", "5",
+                                                         (ifelse(prions$Region.Label=="6", "6",
+                                                                 (ifelse(prions$Region.Label=="7", "7", "8")))))))))))))
+prion.strat.hn <- ds(prions, truncation=prion.trunc, quiet=TRUE,
+                            formula=~stratum,
+                            key="hn")
+prion.strat.hr <- ds(prions, truncation=prion.trunc, quiet=TRUE,
+                            formula=~stratum,
+                            key="hr")
+prion.obs.hn <- ds(prions, truncation=prion.trunc,
+                      key="hn",  formula=~surveyor)
+prion.obs.hr <- ds(prions, truncation=prion.trunc,
+                   key="hr",  formula=~surveyor)
+prion.veg_height.hn <- ds(prions, truncation=prion.trunc,
+                   key="hn",  formula=~veg_height)
+prion.veg_height.hr <- ds(prions, truncation=prion.trunc,
+                          key="hr",  formula=~veg_height)
+prion.strat.obs.hn <- ds(prions, truncation=prion.trunc,
+                   key="hn",  formula=~stratum + surveyor)
+prion.strat.obs.hr <- ds(prions, truncation=prion.trunc,
+                         key="hr",  formula=~stratum + surveyor)
+prion.strat.veg.hn <- ds(prions, truncation=prion.trunc,
+                         key="hn",  formula=~stratum + veg_height)
+prion.strat.veg.hr <- ds(prions, truncation=prion.trunc,
+                         key="hr",  formula=~stratum + veg_height)
+prion.strat.veg.obs.hn <- ds(prions, truncation=prion.trunc,
+                         key="hn",  formula=~stratum + veg_height + surveyor)
+prion.strat.veg.obs.hr <- ds(prions, truncation=prion.trunc,
+                         key="hr",  formula=~stratum + veg_height + surveyor)
+
+results = 'hide'
+```
+
+This table summarises the differences in AIC values between the models:
+
+```{r}
+summarize_ds_models(prion.half.norm ,prion.haz.rate ,prion.half.norm.cos ,prion.haz.rate.cos ,
+                    prion.unif.cos ,prion.half.norm.herm ,prion.haz.rate.herm ,prion.unif.herm ,
+                    prion.half.norm.poly ,prion.haz.rate.poly ,prion.unif.poly ,prion.strat.hn ,
+                    prion.strat.hr ,prion.obs.hn ,prion.obs.hr ,prion.veg_height.hn ,prion.veg_height.hr ,
+                    prion.strat.obs.hn ,prion.strat.obs.hr ,prion.strat.veg.hn ,prion.strat.veg.hr ,
+                    prion.strat.veg.obs.hn ,prion.strat.veg.obs.hr, output = "latex")
+```
+
+The model using stratum and veg height gives the best fit for the prion data, but there's no indication of whether this model is any good or not. The next code chunk tests the goodness of fit using a Cramer von-Mises test:
+
+```{r}
+par(mfrow=c(1,2))
+plot(prion.strat.veg.hr, main="Prion burrows, \ndetection function uses stratum and veg height as covariates")
+covar.fit <- ddf.gof(prion.strat.veg.hr$ddf)
+message <- paste("Cramer von-Mises W=", round(covar.fit$dsgof$CvM$W,3), 
+                 "\nP=", round(covar.fit$dsgof$CvM$p,3))
+text(0.6, 0.1, message, cex=0.8)
+
+```
+
+A P value of 0.326 for the Cramer von-Mises test suggests we reject the null hypothesis that the model does not fit the data, so can assume a reasonably good fit and use the model to estimate stratum-specific density estimates.
+
+```{r}
+
+kable(prion.strat.veg.hr$dht$individuals$summary, format = "markdown")
+
+kable(prion.strat.veg.hr$dht$individuals$D,format="markdown")
+```
+
+From the two resulting tables we multiply the total density estimate by the total area to give an island-wide estimate of burrows, and the lower and upper confidence limits to give 95% confidence:
+
+= 293,198 (257,156-334,290)
+
+For transect data truncating the furthest 5% of the data is recommended, but I'm not sure whether the stats then give an actual strip width. This is useful for segmenting the transect data to run density surface models, so it may be best just to truncate the data at 10 m which looks sensible from graphs of the data.
+
+Some strata with very few records still have reasonable density estimates, so it may be best removing those strata from analyses, but I think probably not at this stage.
+
+
+# Density Surface Modelling
+
+Pages 1002-1003 of Miller et al. 2013 give an excellent summary of approaches to spatial modelling of distance sampling data. They advocate density surface modelling as a preferred option but it would be good to discuss this (and to potentially adopt alternative approaches for modelling Blue Petrel and Grey Petrel data).
+
+I've had a preliminary but fairly weak effort at running some basic density surface models on our data. I don't really understand the outputs at this point and am stuck at the point of needing to run predictions from the model. 
+
+The transects have been split into roughly 20 m square segments. I've calculate mean elevation and mean slope for each segment. We now have segment-level data, distance-data and linked distance-observations to segments.
+
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Jez/Documents/PhD/Data/Island-wide survey/R/dsm"))
+library(dsm)
+library(Distance)
+## Loading required package: mgcv
+## Loading required package: nlme
+## This is mgcv 1.8-7. For overview type 'help("mgcv-package")'.
+## Loading required package: mrds
+## This is mrds 2.1.15
+## Built: R 3.2.2; ; 2015-11-24 17:46:38 UTC; unix
+## This is dsm 2.2.11
+## Built: R 3.2.2; ; 2015-11-24 18:04:45 UTC; unix
+library(ggplot2)
+library(knitr)
+library(captioner)
+library(rgdal)
+library(plyr)
+library(maptools)
+library(tweedie)
+
+# plotting options
+gg.opts <- theme(panel.grid.major=element_blank(),
+                 panel.grid.minor=element_blank(),
+                 panel.background=element_blank())
+
+# make the results reproducible
+set.seed(11123)
+
+segdata <- read.csv("segdata.csv")
+
+distdata <- read.csv("distdata.csv")
+
+obsdata <- read.csv("obsdata.csv")
+
+```
+
+We generate a detection function, but this should eventually come out of the previous analysis including covariates.
+
+```{r}
+
+detfc.hr.null<-ds(distdata, max(distdata$distance), key="hr", adjustment=NULL)
+```
+
+Then fit a simple dsm
+
+```{r}
+
+dsm.xy <- dsm(count~s(x,y), detfc.hr.null, segdata, obsdata, method="REML")
+
+summary(dsm.xy)
+
+vis.gam(dsm.xy, plot.type="contour", view=c("x","y"), asp=1, type="response", contour.col="black", n.grid=100)
+```
+
+Then more complex models with elevation 
+
+```{r}
+
+dsm.xy.elevation <- dsm(count~s(x,y,k=10) + s(elevation_mean,k=20), detfc.hr.null, segdata, obsdata, group = TRUE, segment.area = "area", method="REML")
+summary(dsm.xy.elevation)
+
+plot(dsm.xy.elevation, select=2)
+
+```
+
+and elevation and slope
+
+```{r}
+
+dsm.xy.ele.slope <- dsm(count~s(x,y,k=10) + s(elevation_mean,k=20) +s(slope_mean, k=20), detfc.hr.null, segdata, obsdata, group = TRUE, segment.area = "area", method="REML")
+summary(dsm.xy.ele.slope)
+
+plot(dsm.xy.ele.slope, select=c(2,3))
+
+gam.check(dsm.xy)
+gam.check(dsm.xy.ele.slope)
+```
+
+The next stage will be to make predictions from this data.
+
